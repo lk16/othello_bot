@@ -1,4 +1,6 @@
-#[derive(Debug)]
+use std::mem;
+
+#[derive(Debug, Clone)]
 struct Board {
     me: u64,
     opp: u64,
@@ -19,8 +21,7 @@ impl Board {
         if white_to_move {
             white = self.me;
             black = self.opp
-        }
-        else {
+        } else {
             black = self.me;
             white = self.opp;
         }
@@ -104,9 +105,69 @@ impl Board {
 
         moves_set & !(self.me | self.opp)
     }
+
+    fn do_move(&self, index: i32) -> Board {
+        if ((self.me | self.opp) >> index) & 1 == 1 {
+            panic!("Invalid move");
+        }
+        let mut flipped = 0;
+        for dx in -1..2 {
+            for dy in -1..2 {
+                if dx == 0 && dy == 0 {
+                    continue;
+                }
+                let mut s = 1;
+                loop {
+                    let curx = (index % 8) + (dx * s);
+                    let cury = (index / 8) + (dy * s);
+                    if curx < 0 || curx >= 8 || cury < 0 || cury >= 8 {
+                        break;
+                    }
+
+                    let cur = 8 * cury + curx;
+
+                    if (self.opp >> cur) & 1 == 1 {
+                        s += 1;
+                    } else {
+                        if (self.me >> cur) & 1 == 1 && (s >= 2) {
+                            for p in 1..s {
+                                let f = index + (p * (8 * dy + dx));
+                                flipped |= 1 << f;
+                            }
+                        }
+                        break;
+                    }
+                }
+            }
+        }
+        let mut child = self.clone();
+        child.me |= flipped;
+        child.me |= 1 << index;
+        child.opp &= !child.me;
+        mem::swap(&mut child.opp, &mut child.me);
+        child
+    }
+
+    fn children(&self) -> Vec<Board> {
+        let mut moves = self.moves();
+        let mut children: Vec<Board> = Vec::new();
+
+        while moves != 0 {
+            let index = moves.trailing_zeros() as i32;
+            children.push(self.do_move(index));
+            moves &= !(1 << index)
+        }
+
+        children
+    }
 }
 
 fn main() {
     let board = Board::new();
     board.print(false);
+
+    let children = board.children();
+    for child in children.iter() {
+        child.print(true);
+    }
 }
