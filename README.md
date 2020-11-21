@@ -9,5 +9,7 @@ This project aims to implement a high-performing generator for othello openings.
 - [x] move board to separate file
 - [x] implement bot with alpha-beta pruning
 - [x] print stats on calculation speed
-- [ ] use transposition table
-- [ ] xot openings
+- [x] use transposition table
+- [ ] normalize boards before checking transposition table
+- [ ] add tests
+- [ ] benchmark/optimize

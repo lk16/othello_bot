@@ -1,9 +1,11 @@
 use crate::board::Board;
+use std::collections::HashMap;
 use std::time::Instant;
 
 pub struct Bot {
     search_depth: u32,
     nodes: u64,
+    hash_map: HashMap<Board, i32>,
 }
 
 impl Bot {
@@ -11,6 +13,7 @@ impl Bot {
         Bot {
             search_depth: search_depth,
             nodes: 0,
+            hash_map: HashMap::new(),
         }
     }
 
@@ -47,12 +50,20 @@ impl Bot {
         }
 
         self.nodes = 0;
+        self.hash_map.clear();
 
         best_child
     }
 
     fn alpha_beta(&mut self, board: &Board, mut alpha: i32, beta: i32, depth: u32) -> i32 {
         self.nodes += 1;
+
+        if depth > 5 {
+            match self.hash_map.get(board) {
+                Some(heuristic) => return heuristic.clone(),
+                None => (),
+            }
+        }
 
         if depth == 0 {
             return self.heuristic(board);
@@ -72,13 +83,17 @@ impl Bot {
         for child in children.iter() {
             let heuristic = -self.alpha_beta(&child, -beta, -alpha, depth - 1);
             if heuristic >= beta {
-                return beta;
+                alpha = beta;
+                break;
             }
             if heuristic > alpha {
                 alpha = heuristic;
             }
         }
 
+        if depth > 5 {
+            self.hash_map.insert(board.clone(), alpha);
+        }
         alpha
     }
 

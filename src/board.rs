@@ -1,6 +1,6 @@
 use std::mem;
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Eq, PartialEq, Hash)]
 pub struct Board {
     me: u64,
     opp: u64,
