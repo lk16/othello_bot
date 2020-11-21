@@ -3,7 +3,7 @@ mod bot;
 
 fn main() {
     let mut board = board::Board::new();
-    let bot = bot::Bot::new(9);
+    let mut bot = bot::Bot::new(9);
 
     let mut turn = false;
     board.print(turn);

@@ -1,17 +1,22 @@
 use crate::board::Board;
+use std::time::Instant;
 
 pub struct Bot {
     search_depth: u32,
+    nodes: u64,
 }
 
 impl Bot {
     pub fn new(search_depth: u32) -> Self {
         Bot {
             search_depth: search_depth,
+            nodes: 0,
         }
     }
 
-    pub fn do_move(&self, board: &Board) -> Board {
+    pub fn do_move(&mut self, board: &Board) -> Board {
+        let start = Instant::now();
+
         let children = board.children();
 
         if children.len() == 0 {
@@ -24,17 +29,31 @@ impl Bot {
 
         for (i, child) in children.iter().enumerate() {
             let heuristic = -self.alpha_beta(child, -beta, -alpha, self.search_depth);
-            println!("Child {} / {}: {}", i + 1, children.len(), heuristic);
             if heuristic > alpha {
                 alpha = heuristic;
                 best_child = child.clone();
             }
+
+            let duration = start.elapsed().as_secs_f32();
+            println!(
+                "Child {:2}/{:2}: {:6} | {:9} nodes in {:4.2} sec = {:9} nodes/sec",
+                i + 1,
+                children.len(),
+                heuristic,
+                self.nodes,
+                duration,
+                ((self.nodes as f32) / duration) as i32
+            );
         }
+
+        self.nodes = 0;
 
         best_child
     }
 
-    fn alpha_beta(&self, board: &Board, mut alpha: i32, beta: i32, depth: u32) -> i32 {
+    fn alpha_beta(&mut self, board: &Board, mut alpha: i32, beta: i32, depth: u32) -> i32 {
+        self.nodes += 1;
+
         if depth == 0 {
             return self.heuristic(board);
         }
