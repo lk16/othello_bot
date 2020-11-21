@@ -144,8 +144,13 @@ impl Board {
         child.me |= flipped;
         child.me |= 1 << index;
         child.opp &= !child.me;
-        mem::swap(&mut child.opp, &mut child.me);
+        child.switch_turn();
+
         child
+    }
+
+    pub fn switch_turn(&mut self) {
+        mem::swap(&mut self.opp, &mut self.me);
     }
 
     pub fn children(&self) -> Vec<Board> {
@@ -158,5 +163,62 @@ impl Board {
             moves &= !(1 << index)
         }
         children
+    }
+
+    pub fn exact_score(&self) -> i32 {
+        let me_count = self.me.count_ones() as i32;
+        let opp_count = self.opp.count_ones() as i32;
+
+        if me_count > opp_count {
+            return 64 - (2 * opp_count);
+        }
+        if me_count < opp_count {
+            return -64 + (2 * me_count);
+        }
+        return 0;
+    }
+
+    pub fn has_moves(&self) -> bool {
+        self.moves() != 0
+    }
+
+    pub fn corner_difference(&self) -> i32 {
+        let corner_mask = 1 << 0 | 1 << 7 | 1 << 56 | 1 << 63;
+        let me_corners = (self.me & corner_mask).count_ones() as i32;
+        let opp_corners = (self.opp & corner_mask).count_ones() as i32;
+
+        me_corners - opp_corners
+    }
+
+    pub fn potential_moves_difference(&self) -> i32 {
+        let left_mask = 0x7F7F7F7F7F7F7F7F;
+        let right_mask = 0xFEFEFEFEFEFEFEFE;
+
+        let mut me_potential_moves = (self.opp & left_mask) << 1;
+        me_potential_moves |= (self.opp & right_mask) >> 1;
+        me_potential_moves |= (self.opp & left_mask) << 9;
+        me_potential_moves |= (self.opp & right_mask) >> 9;
+        me_potential_moves |= (self.opp & right_mask) << 7;
+        me_potential_moves |= (self.opp & left_mask) >> 7;
+        me_potential_moves |= self.opp << 8;
+        me_potential_moves |= self.opp >> 8;
+
+        me_potential_moves &= !(self.me | self.opp);
+
+        let mut opp_potential_moves = (self.me & left_mask) << 1;
+        opp_potential_moves |= (self.me & right_mask) >> 1;
+        opp_potential_moves |= (self.me & left_mask) << 9;
+        opp_potential_moves |= (self.me & right_mask) >> 9;
+        opp_potential_moves |= (self.me & right_mask) << 7;
+        opp_potential_moves |= (self.me & left_mask) >> 7;
+        opp_potential_moves |= self.me << 8;
+        opp_potential_moves |= self.me >> 8;
+
+        opp_potential_moves &= !(self.me | self.opp);
+
+        let me_potential_move_count = me_potential_moves.count_ones() as i32;
+        let opp_potential_moves_count = opp_potential_moves.count_ones() as i32;
+
+        me_potential_move_count - opp_potential_moves_count
     }
 }
