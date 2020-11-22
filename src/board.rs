@@ -1,18 +1,55 @@
+use crate::bits::{nonzero, upper_bit};
 use packed_simd::*;
+use rand::Rng;
 use std::mem;
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Eq, Hash)]
 pub struct Board {
     me: u64,
     opp: u64,
 }
 
+impl PartialEq for Board {
+    fn eq(&self, other: &Self) -> bool {
+        self.me == other.me && self.opp == other.opp
+    }
+}
+
 impl Board {
-    pub fn new() -> Self {
+    pub fn new() -> Board {
         Board {
             me: (1 << 28) | (1 << 35),
             opp: (1 << 27) | (1 << 36),
         }
+    }
+
+    pub fn new_random(discs: u32) -> Board {
+        if discs < 4 || discs > 64 {
+            panic!("Invalid amount of discs");
+        }
+
+        let mut board = Board::new();
+        let mut skips = 0;
+
+        while board.count_discs() != discs {
+            if skips == 2 {
+                // Stuck. Try again.
+                board = Board::new();
+                skips = 0;
+                continue;
+            }
+
+            if board.moves() == 0 {
+                skips += 1;
+                board.switch_turn();
+                continue;
+            }
+
+            skips = 0;
+            board = board.do_random_move();
+        }
+
+        board
     }
 
     pub fn print(&self, white_to_move: bool) {
@@ -80,25 +117,7 @@ impl Board {
         return res.or();
     }
 
-    fn upper_bit(mut x: u64x4) -> u64x4 {
-        x = x | (x >> 1);
-        x = x | (x >> 2);
-        x = x | (x >> 4);
-        x = x | (x >> 8);
-        x = x | (x >> 16);
-        x = x | (x >> 32);
-        let lowers: u64x4 = x >> 1;
-        x & !lowers
-    }
-
-    fn nonzero(x: u64x4) -> u64x4 {
-        let zero = u64x4::new(0, 0, 0, 0);
-        let mask = x.ne(zero);
-        let one = u64x4::new(1, 1, 1, 1);
-        one & u64x4::from_cast(mask)
-    }
-
-    fn flip_simd(&self, pos: usize) -> u64x4 {
+    fn flip(&self, pos: usize) -> u64 {
         let p = u64x4::new(self.me, self.me, self.me, self.me);
         let o = u64x4::new(self.opp, self.opp, self.opp, self.opp);
         let omask = u64x4::new(
@@ -115,7 +134,7 @@ impl Board {
             0x0040201008040201u64,
         );
         let mut mask = mask1 >> (63 - pos) as u32;
-        let mut outflank = Board::upper_bit(!om & mask) & p;
+        let mut outflank = upper_bit(!om & mask) & p;
         let mut flipped = u64x4::from_cast(-i64x4::from_cast(outflank) << 1) & mask;
         let mask2 = u64x4::new(
             0x0101010101010100u64,
@@ -125,24 +144,41 @@ impl Board {
         );
         mask = mask2 << pos as u32;
         outflank = mask & ((om | !mask) + 1) & p;
-        flipped |= (outflank - Board::nonzero(outflank)) & mask;
-        return flipped;
-    }
+        flipped |= (outflank - nonzero(outflank)) & mask;
 
-    pub fn flip_unchecked(&self, pos: usize) -> u64 {
-        let flips = self.flip_simd(pos);
-        flips.or()
+        flipped.or()
     }
 
     pub fn do_move(&self, index: usize) -> Board {
-        let flip_bits = self.flip_unchecked(index);
-        if flip_bits == 0 {
+        let flipped = self.flip(index);
+        if flipped == 0 {
             panic!("Invalid move");
         }
         Board {
-            me: self.opp ^ flip_bits,
-            opp: (self.me ^ flip_bits) | (1u64 << index),
+            me: self.opp ^ flipped,
+            opp: (self.me ^ flipped) | (1u64 << index),
         }
+    }
+
+    pub fn do_random_move(&self) -> Board {
+        let moves = self.moves();
+
+        if moves == 0 {
+            panic!("No moves");
+        }
+
+        let mut child = self.clone();
+
+        loop {
+            let index = rand::thread_rng().gen_range(0, 64);
+
+            if (moves >> index) & 1 == 1 {
+                child = child.do_move(index as usize);
+                break;
+            }
+        }
+
+        child
     }
 
     pub fn switch_turn(&mut self) {
@@ -176,6 +212,10 @@ impl Board {
 
     pub fn has_moves(&self) -> bool {
         self.moves() != 0
+    }
+
+    pub fn count_discs(&self) -> u32 {
+        (self.me | self.opp).count_ones()
     }
 
     pub fn corner_difference(&self) -> i32 {
@@ -217,4 +257,92 @@ impl Board {
 
         me_potential_move_count - opp_potential_moves_count
     }
+}
+
+#[cfg(test)]
+mod tests {
+
+    use super::Board;
+    use std::collections::HashSet;
+    use std::iter::FromIterator;
+
+    fn generate_test_boards() -> Vec<Board> {
+        let mut boards = Vec::new();
+
+        for y in 0..8 {
+            for x in 0..8 {
+                let mut board = Board::new();
+                board.me |= 1 << (y * 8 + x);
+
+                // for each direction
+                for dy in -1..2 {
+                    for dx in -1..2 {
+                        if (dy == 0) && (dx == 0) {
+                            continue;
+                        }
+                        board.opp = 0;
+
+                        // for each distance
+                        for d in 1..7 {
+                            // check if me can still flip within othello boundaries
+                            let py = y + (d + 1) * dy;
+                            let px = x + (d + 1) * dx;
+
+                            if (py < 0) || (py > 7) || (px < 0) || (px > 7) {
+                                break;
+                            }
+
+                            let qy = y + (d * dy);
+                            let qx = x + (d * dx);
+
+                            board.opp |= 1 << (qy * 8 + qx);
+
+                            boards.push(board.clone());
+                        }
+                    }
+                }
+            }
+        }
+
+        boards.push(Board::new());
+
+        // random reachable boards with 4-64 discs
+        for _ in 0..10 {
+            for discs in 4..65 {
+                boards.push(Board::new_random(discs));
+            }
+        }
+
+        boards
+    }
+
+    #[test]
+    fn test_board_do_random_move() {
+        let boards = generate_test_boards();
+
+        for board in boards.iter() {
+            let children = HashSet::<Board>::from_iter(board.children());
+
+            if children.len() == 0 {
+                continue;
+            }
+
+            for _ in 0..20 {
+                let child = board.do_random_move();
+                assert!(children.contains(&child));
+            }
+        }
+    }
+
+    // TODO test fn count_discs
+    // TODO test fn flip(&self, pos: usize) -> u64
+    // TODO test fn children(&self) -> Vec<Board>
+    // TODO test fn corner_difference(&self) -> i32
+    // TODO test fn do_move(&self, index: usize) -> Board
+    // TODO test fn exact_score(&self) -> i32
+    // TODO test fn has_moves(&self) -> bool
+    // TODO test fn moves(&self) -> u64
+    // TODO test fn potential_moves_difference(&self) -> i32
+    // TODO test fn print(&self, white_to_move: bool)
+    // TODO test fn switch_turn(&mut self)
 }
