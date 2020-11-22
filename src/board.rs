@@ -54,57 +54,30 @@ impl Board {
     }
 
     pub fn moves(&self) -> u64 {
-        let mask = self.opp & 0x7E7E7E7E7E7E7E7E;
-
-        let mut flip_l = mask & (self.me << 1);
-        flip_l |= mask & (flip_l << 1);
-        let mut mask_l = mask & (mask << 1);
-        flip_l |= mask_l & (flip_l << (2 * 1));
-        flip_l |= mask_l & (flip_l << (2 * 1));
-        let mut flip_r = mask & (self.me >> 1);
-        flip_r |= mask & (flip_r >> 1);
-        let mut mask_r = mask & (mask >> 1);
-        flip_r |= mask_r & (flip_r >> (2 * 1));
-        flip_r |= mask_r & (flip_r >> (2 * 1));
-        let mut moves_set = (flip_l << 1) | (flip_r >> 1);
-
-        flip_l = mask & (self.me << 7);
-        flip_l |= mask & (flip_l << 7);
-        mask_l = mask & (mask << 7);
-        flip_l |= mask_l & (flip_l << (2 * 7));
-        flip_l |= mask_l & (flip_l << (2 * 7));
-        flip_r = mask & (self.me >> 7);
-        flip_r |= mask & (flip_r >> 7);
-        mask_r = mask & (mask >> 7);
-        flip_r |= mask_r & (flip_r >> (2 * 7));
-        flip_r |= mask_r & (flip_r >> (2 * 7));
-        moves_set |= (flip_l << 7) | (flip_r >> 7);
-
-        flip_l = mask & (self.me << 9);
-        flip_l |= mask & (flip_l << 9);
-        mask_l = mask & (mask << 9);
-        flip_l |= mask_l & (flip_l << (2 * 9));
-        flip_l |= mask_l & (flip_l << (2 * 9));
-        flip_r = mask & (self.me >> 9);
-        flip_r |= mask & (flip_r >> 9);
-        mask_r = mask & (mask >> 9);
-        flip_r |= mask_r & (flip_r >> (2 * 9));
-        flip_r |= mask_r & (flip_r >> (2 * 9));
-        moves_set |= (flip_l << 9) | (flip_r >> 9);
-
-        flip_l = self.opp & (self.me << 8);
-        flip_l |= self.opp & (flip_l << 8);
-        mask_l = self.opp & (self.opp << 8);
-        flip_l |= mask_l & (flip_l << (2 * 8));
-        flip_l |= mask_l & (flip_l << (2 * 8));
-        flip_r = self.opp & (self.me >> 8);
-        flip_r |= self.opp & (flip_r >> 8);
-        mask_r = self.opp & (self.opp >> 8);
-        flip_r |= mask_r & (flip_r >> (2 * 8));
-        flip_r |= mask_r & (flip_r >> (2 * 8));
-        moves_set |= (flip_l << 8) | (flip_r >> 8);
-
-        moves_set & !(self.me | self.opp)
+        let shift1 = u64x4::new(1, 7, 9, 8);
+        let mask = u64x4::new(
+            0x7e7e7e7e7e7e7e7eu64,
+            0x7e7e7e7e7e7e7e7eu64,
+            0x7e7e7e7e7e7e7e7eu64,
+            0xffffffffffffffffu64,
+        );
+        let v_player = u64x4::splat(self.me);
+        let masked_op = u64x4::splat(self.opp) & mask;
+        let mut flip_l = masked_op & (v_player << shift1);
+        let mut flip_r = masked_op & (v_player >> shift1);
+        flip_l |= masked_op & (flip_l << shift1);
+        flip_r |= masked_op & (flip_r >> shift1);
+        let pre_l = masked_op & (masked_op << shift1);
+        let pre_r = pre_l >> shift1;
+        let shift2 = shift1 + shift1;
+        flip_l |= pre_l & (flip_l << shift2);
+        flip_r |= pre_r & (flip_r >> shift2);
+        flip_l |= pre_l & (flip_l << shift2);
+        flip_r |= pre_r & (flip_r >> shift2);
+        let mut res = flip_l << shift1;
+        res |= flip_r >> shift1;
+        res &= u64x4::splat(!(self.me | self.opp));
+        return res.or();
     }
 
     fn upper_bit(mut x: u64x4) -> u64x4 {
