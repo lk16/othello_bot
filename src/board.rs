@@ -1,3 +1,4 @@
+use packed_simd::*;
 use std::mem;
 
 #[derive(Debug, Clone)]
@@ -106,47 +107,69 @@ impl Board {
         moves_set & !(self.me | self.opp)
     }
 
-    pub fn do_move(&self, index: i32) -> Board {
-        if ((self.me | self.opp) >> index) & 1 == 1 {
+    fn upper_bit(mut x: u64x4) -> u64x4 {
+        x = x | (x >> 1);
+        x = x | (x >> 2);
+        x = x | (x >> 4);
+        x = x | (x >> 8);
+        x = x | (x >> 16);
+        x = x | (x >> 32);
+        let lowers: u64x4 = x >> 1;
+        x & !lowers
+    }
+
+    fn nonzero(x: u64x4) -> u64x4 {
+        let zero = u64x4::new(0, 0, 0, 0);
+        let mask = x.ne(zero);
+        let one = u64x4::new(1, 1, 1, 1);
+        one & u64x4::from_cast(mask)
+    }
+
+    fn flip_simd(&self, pos: usize) -> u64x4 {
+        let p = u64x4::new(self.me, self.me, self.me, self.me);
+        let o = u64x4::new(self.opp, self.opp, self.opp, self.opp);
+        let omask = u64x4::new(
+            0xFFFFFFFFFFFFFFFFu64,
+            0x7E7E7E7E7E7E7E7Eu64,
+            0x7E7E7E7E7E7E7E7Eu64,
+            0x7E7E7E7E7E7E7E7Eu64,
+        );
+        let om = o & omask;
+        let mask1 = u64x4::new(
+            0x0080808080808080u64,
+            0x7f00000000000000u64,
+            0x0102040810204000u64,
+            0x0040201008040201u64,
+        );
+        let mut mask = mask1 >> (63 - pos) as u32;
+        let mut outflank = Board::upper_bit(!om & mask) & p;
+        let mut flipped = u64x4::from_cast(-i64x4::from_cast(outflank) << 1) & mask;
+        let mask2 = u64x4::new(
+            0x0101010101010100u64,
+            0x00000000000000feu64,
+            0x0002040810204080u64,
+            0x8040201008040200u64,
+        );
+        mask = mask2 << pos as u32;
+        outflank = mask & ((om | !mask) + 1) & p;
+        flipped |= (outflank - Board::nonzero(outflank)) & mask;
+        return flipped;
+    }
+
+    pub fn flip_unchecked(&self, pos: usize) -> u64 {
+        let flips = self.flip_simd(pos);
+        flips.or()
+    }
+
+    pub fn do_move(&self, index: usize) -> Board {
+        let flip_bits = self.flip_unchecked(index);
+        if flip_bits == 0 {
             panic!("Invalid move");
         }
-        let mut flipped = 0;
-        for dx in -1..2 {
-            for dy in -1..2 {
-                if dx == 0 && dy == 0 {
-                    continue;
-                }
-                let mut s = 1;
-                loop {
-                    let curx = (index % 8) + (dx * s);
-                    let cury = (index / 8) + (dy * s);
-                    if curx < 0 || curx >= 8 || cury < 0 || cury >= 8 {
-                        break;
-                    }
-
-                    let cur = 8 * cury + curx;
-
-                    if (self.opp >> cur) & 1 == 1 {
-                        s += 1;
-                    } else {
-                        if (self.me >> cur) & 1 == 1 && (s >= 2) {
-                            for p in 1..s {
-                                let f = index + (p * (8 * dy + dx));
-                                flipped |= 1 << f;
-                            }
-                        }
-                        break;
-                    }
-                }
-            }
+        Board {
+            me: self.opp ^ flip_bits,
+            opp: (self.me ^ flip_bits) | (1u64 << index),
         }
-        let mut child = self.clone();
-        child.me |= flipped;
-        child.me |= 1 << index;
-        child.opp &= !child.me;
-        child.switch_turn();
-
-        child
     }
 
     pub fn switch_turn(&mut self) {
@@ -158,7 +181,7 @@ impl Board {
         let mut children: Vec<Board> = Vec::new();
 
         while moves != 0 {
-            let index = moves.trailing_zeros() as i32;
+            let index = moves.trailing_zeros() as usize;
             children.push(self.do_move(index));
             moves &= !(1 << index)
         }
