@@ -226,31 +226,26 @@ impl Board {
         me_corners - opp_corners
     }
 
-    pub fn potential_moves_difference(&self) -> i32 {
+    pub fn potential_moves(me: u64, opp: u64) -> u64 {
         let left_mask = 0x7F7F7F7F7F7F7F7F;
         let right_mask = 0xFEFEFEFEFEFEFEFE;
+        let all_mask = 0xFFFFFFFFFFFFFFFF;
 
-        let mut me_potential_moves = (self.opp & left_mask) << 1;
-        me_potential_moves |= (self.opp & right_mask) >> 1;
-        me_potential_moves |= (self.opp & left_mask) << 9;
-        me_potential_moves |= (self.opp & right_mask) >> 9;
-        me_potential_moves |= (self.opp & right_mask) << 7;
-        me_potential_moves |= (self.opp & left_mask) >> 7;
-        me_potential_moves |= self.opp << 8;
-        me_potential_moves |= self.opp >> 8;
+        let shift = u64x4::new(9, 8, 7, 1);
 
-        me_potential_moves &= !(self.me | self.opp);
+        let left_shift_mask = u64x4::new(left_mask, all_mask, right_mask, left_mask);
+        let right_shift_mask = u64x4::new(right_mask, all_mask, left_mask, right_mask);
 
-        let mut opp_potential_moves = (self.me & left_mask) << 1;
-        opp_potential_moves |= (self.me & right_mask) >> 1;
-        opp_potential_moves |= (self.me & left_mask) << 9;
-        opp_potential_moves |= (self.me & right_mask) >> 9;
-        opp_potential_moves |= (self.me & right_mask) << 7;
-        opp_potential_moves |= (self.me & left_mask) >> 7;
-        opp_potential_moves |= self.me << 8;
-        opp_potential_moves |= self.me >> 8;
+        let mut surround_opp: u64 = 0;
+        surround_opp |= ((u64x4::splat(opp) & left_shift_mask) << shift).or();
+        surround_opp |= ((u64x4::splat(opp) & right_shift_mask) >> shift).or();
 
-        opp_potential_moves &= !(self.me | self.opp);
+        surround_opp & !(me | opp)
+    }
+
+    pub fn potential_moves_difference(&self) -> i32 {
+        let me_potential_moves = Board::potential_moves(self.me, self.opp);
+        let opp_potential_moves = Board::potential_moves(self.opp, self.me);
 
         let me_potential_move_count = me_potential_moves.count_ones() as i32;
         let opp_potential_moves_count = opp_potential_moves.count_ones() as i32;
