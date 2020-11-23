@@ -271,7 +271,7 @@ mod tests {
 
         for y in 0..8 {
             for x in 0..8 {
-                let mut board = Board::new();
+                let mut board = Board { me: 0, opp: 0 };
                 board.me |= 1 << (y * 8 + x);
 
                 // for each direction
@@ -316,6 +316,171 @@ mod tests {
         boards
     }
 
+    impl Board {
+        fn naive_count_discs(&self) -> u32 {
+            let mut count: u32 = 0;
+            for i in 0..64 {
+                if (self.me | self.opp) >> i & 1 == 1 {
+                    count += 1
+                }
+            }
+            count
+        }
+
+        fn naive_switch_turn(&mut self) {
+            let tmp = self.me;
+            self.me = self.opp;
+            self.opp = tmp;
+        }
+
+        fn naive_flip(&self, index: usize) -> u64 {
+            if (self.me | self.opp) >> index & 1 == 1 {
+                return 0;
+            }
+            let mut flipped: u64 = 0;
+            for dx in -1..2 {
+                for dy in -1..2 {
+                    if dx == 0 && dy == 0 {
+                        continue;
+                    }
+                    let mut s = 1;
+                    loop {
+                        let curx = (index % 8) as i32 + (dx * s);
+                        let cury = (index / 8) as i32 + (dy * s);
+                        if curx < 0 || curx >= 8 || cury < 0 || cury >= 8 {
+                            break;
+                        }
+
+                        let cur = 8 * cury + curx;
+
+                        if (self.opp >> cur) & 1 == 1 {
+                            s += 1;
+                        } else {
+                            if ((self.me >> cur) & 1 == 1) && s >= 2 {
+                                for p in 1..s {
+                                    let f = index as i32 + (p * (8 * dy + dx));
+                                    flipped |= 1 << f;
+                                }
+                            }
+                            break;
+                        }
+                    }
+                }
+            }
+            flipped
+        }
+
+        fn naive_moves(&self) -> u64 {
+            let mut moves: u64 = 0;
+
+            for index in 0..64 {
+                if self.naive_flip(index) != 0 {
+                    moves |= 1 << index;
+                }
+            }
+            moves
+        }
+
+        fn naive_do_move(&self, index: usize) -> Board {
+            let flipped = self.naive_flip(index);
+            Board {
+                me: self.opp ^ flipped,
+                opp: self.me | flipped | 1 << index,
+            }
+        }
+
+        fn naive_children(&self) -> Vec<Board> {
+            let mut children = Vec::new();
+            let moves = self.moves();
+            for index in 0..64 {
+                if (moves >> index) & 1 == 1 {
+                    children.push(self.do_move(index));
+                }
+            }
+            children
+        }
+
+        fn naive_exact_score(&self) -> i32 {
+            let me_count = self.me.count_ones() as i32;
+            let opp_count = self.opp.count_ones() as i32;
+
+            if me_count > opp_count {
+                return 64 - 2 * opp_count;
+            } else if opp_count > me_count {
+                return -64 + 2 * me_count;
+            }
+            0
+        }
+
+        fn naive_corner_difference(&self) -> i32 {
+            let indexes = vec![0, 7, 56, 63];
+
+            let mut diff: i32 = 0;
+            for index in indexes.iter() {
+                if (self.me >> index) & 1 == 1 {
+                    diff += 1;
+                }
+                if (self.opp >> index) & 1 == 1 {
+                    diff -= 1;
+                }
+            }
+            diff
+        }
+
+        fn naive_potential_moves(&self) -> u64 {
+            let mut surround_opp: u64 = 0;
+
+            for index in 0..64 {
+                if (self.opp >> index) & 1 == 1 {
+                    let y = index / 8;
+                    let x = index % 8;
+
+                    if y > 0 {
+                        if x > 0 {
+                            surround_opp |= 1 << (index - 9);
+                        }
+
+                        surround_opp |= 1 << (index - 8);
+
+                        if x < 7 {
+                            surround_opp |= 1 << (index - 7);
+                        }
+                    }
+
+                    if x > 0 {
+                        surround_opp |= 1 << (index - 1);
+                    }
+
+                    if x < 7 {
+                        surround_opp |= 1 << (index + 1);
+                    }
+
+                    if y < 7 {
+                        if x > 0 {
+                            surround_opp |= 1 << (index + 7);
+                        }
+
+                        surround_opp |= 1 << (index + 8);
+
+                        if x < 7 {
+                            surround_opp |= 1 << (index + 9);
+                        }
+                    }
+                }
+            }
+            surround_opp & !(self.me | self.opp)
+        }
+
+        fn naive_potential_moves_difference(&self) -> i32 {
+            let me_potential_moves_count = self.naive_potential_moves().count_ones() as i32;
+            let mut clone = self.clone();
+            clone.switch_turn();
+            let opp_potential_moves_count = clone.naive_potential_moves().count_ones() as i32;
+
+            me_potential_moves_count - opp_potential_moves_count
+        }
+    }
+
     #[test]
     fn test_board_do_random_move() {
         let boards = generate_test_boards();
@@ -334,15 +499,106 @@ mod tests {
         }
     }
 
-    // TODO test fn count_discs
-    // TODO test fn flip(&self, pos: usize) -> u64
-    // TODO test fn children(&self) -> Vec<Board>
-    // TODO test fn corner_difference(&self) -> i32
-    // TODO test fn do_move(&self, index: usize) -> Board
-    // TODO test fn exact_score(&self) -> i32
-    // TODO test fn has_moves(&self) -> bool
-    // TODO test fn moves(&self) -> u64
-    // TODO test fn potential_moves_difference(&self) -> i32
-    // TODO test fn print(&self, white_to_move: bool)
-    // TODO test fn switch_turn(&mut self)
+    #[test]
+    fn test_board_count_discs() {
+        let boards = generate_test_boards();
+        for board in boards.iter() {
+            assert!(board.naive_count_discs() == board.count_discs());
+        }
+    }
+
+    #[test]
+    fn test_board_switch_turn() {
+        let boards = generate_test_boards();
+        for board in boards.iter() {
+            let mut fast: Board = board.clone();
+            fast.switch_turn();
+
+            let mut naive: Board = board.clone();
+            naive.naive_switch_turn();
+            assert_eq!(naive, fast);
+        }
+    }
+
+    #[test]
+    fn test_board_flip() {
+        let boards = generate_test_boards();
+        for board in boards.iter() {
+            let moves = board.moves();
+
+            for index in 0..63 {
+                if (moves >> index) & 1 == 1 {
+                    assert_eq!(board.naive_flip(index), board.flip(index));
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn test_board_moves() {
+        let boards = generate_test_boards();
+
+        for board in boards.iter() {
+            assert_eq!(board.naive_moves(), board.moves());
+        }
+    }
+
+    #[test]
+    fn test_has_moves() {
+        let boards = generate_test_boards();
+        for board in boards.iter() {
+            let has_moves = board.moves() != 0;
+            assert_eq!(has_moves, board.has_moves());
+        }
+    }
+
+    #[test]
+    fn test_board_do_move() {
+        let boards = generate_test_boards();
+        for board in boards.iter() {
+            let moves = board.naive_moves();
+            for index in 0..64 {
+                if (moves >> index) & 1 == 1 {
+                    assert_eq!(board.naive_do_move(index), board.do_move(index));
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn test_board_children() {
+        let boards = generate_test_boards();
+        for board in boards.iter() {
+            let children_slow = HashSet::<Board>::from_iter(board.naive_children());
+            let children_fast = HashSet::<Board>::from_iter(board.children());
+            assert_eq!(children_slow, children_fast);
+        }
+    }
+
+    #[test]
+    fn test_board_exact_score() {
+        let boards = generate_test_boards();
+        for board in boards.iter() {
+            assert_eq!(board.naive_exact_score(), board.exact_score());
+        }
+    }
+
+    #[test]
+    fn test_board_corner_difference() {
+        let boards = generate_test_boards();
+        for board in boards.iter() {
+            assert_eq!(board.naive_corner_difference(), board.corner_difference());
+        }
+    }
+
+    #[test]
+    fn test_board_potential_moves_difference() {
+        let boards = generate_test_boards();
+        for board in boards.iter() {
+            assert_eq!(
+                board.naive_potential_moves_difference(),
+                board.potential_moves_difference()
+            );
+        }
+    }
 }
