@@ -31,10 +31,12 @@ cargo +nightly test
 - [x] move board to separate file
 - [x] implement bot with alpha-beta pruning
 - [x] print stats on calculation speed
-- [ ] simd
+- [x] simd
     - [x] do move
     - [x] get valid moves
-    - [ ] potential move difference
-    - [ ] corner difference
+    - [x] potential move difference
+    - [x] corner difference
+- [ ] implement pvs
+- [ ] implement board normalization [edax](https://github.com/abulmo/edax-reversi/blob/master/src/board.c#L319)
 - [ ] use transposition table
 - [ ] xot openings

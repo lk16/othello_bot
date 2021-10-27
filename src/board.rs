@@ -255,13 +255,13 @@ impl Board {
 }
 
 #[cfg(test)]
-mod tests {
+pub mod tests {
 
     use super::Board;
     use std::collections::HashSet;
     use std::iter::FromIterator;
 
-    fn generate_test_boards() -> Vec<Board> {
+    pub fn generate_test_boards() -> Vec<Board> {
         let mut boards = Vec::new();
 
         for y in 0..8 {
